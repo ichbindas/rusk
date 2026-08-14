@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Expose on-chain equivocation-fault proofs (`Fault::DoubleCandidate`/`DoubleValidationVote`/
+  `DoubleRatificationVote`) via a new `faults` field on the GraphQL `Block` type — a
+  hand-written `FaultDto` projection (id/faultType/culprit/round/iteration), since `Fault`
+  has no serde shape of its own. Read-only, no new DB-layer plumbing (`Ledger::faults` already
+  existed internally)
+
 ## [1.7.0] - 2026-06-10
 
 ### Added

@@ -364,4 +364,44 @@ mod tests {
             );
         }
     }
+
+    #[tokio::test]
+    async fn block_faults_field_is_registered() {
+        let schema = schema();
+        let res = schema
+            .execute(
+                r#"{ __type(name: "Block") { fields { name } } }"#,
+            )
+            .await;
+        assert!(res.errors.is_empty(), "introspection failed: {res:?}");
+        let data = res.data.into_json().expect("json");
+        let field_names: Vec<String> = data["__type"]["fields"]
+            .as_array()
+            .expect("fields array")
+            .iter()
+            .map(|f| f["name"].as_str().unwrap().to_string())
+            .collect();
+        assert!(
+            field_names.contains(&"faults".to_string()),
+            "expected Block.faults field, got: {field_names:?}"
+        );
+
+        let res = schema
+            .execute(r#"{ __type(name: "FaultDto") { fields { name } } }"#)
+            .await;
+        assert!(res.errors.is_empty(), "introspection failed: {res:?}");
+        let data = res.data.into_json().expect("json");
+        let dto_fields: Vec<String> = data["__type"]["fields"]
+            .as_array()
+            .expect("fields array")
+            .iter()
+            .map(|f| f["name"].as_str().unwrap().to_string())
+            .collect();
+        for expected in ["id", "faultType", "culprit", "round", "iteration"] {
+            assert!(
+                dto_fields.contains(&expected.to_string()),
+                "expected FaultDto.{expected}, got: {dto_fields:?}"
+            );
+        }
+    }
 }

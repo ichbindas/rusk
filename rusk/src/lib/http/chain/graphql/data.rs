@@ -9,7 +9,7 @@ use std::ops::Deref;
 use async_graphql::{FieldError, FieldResult, Json, Object, SimpleObject};
 use dusk_vm::gen_contract_id;
 use node::database::{DB, Ledger, LightBlock};
-use node_data::ledger::Label;
+use node_data::ledger::{Fault, Label};
 use serde::{Deserialize, Serialize};
 
 /// Pair of (block height, block hash) of the last block and the last finalized
@@ -30,6 +30,7 @@ impl BlockPair {
 pub struct Block {
     header: node_data::ledger::Header,
     txs_id: Vec<[u8; 32]>,
+    faults_ids: Vec<[u8; 32]>,
 }
 
 impl From<LightBlock> for Block {
@@ -37,6 +38,7 @@ impl From<LightBlock> for Block {
         Self {
             header: value.header,
             txs_id: value.transactions_ids,
+            faults_ids: value.faults_ids,
         }
     }
 }
@@ -125,6 +127,20 @@ impl Block {
 
     pub async fn reward(&self) -> u64 {
         crate::node::emission_amount(self.header.height)
+    }
+
+    /// On-chain equivocation-fault proofs carried by this block (empty for
+    /// the vast majority of blocks — faults are exceptional). Read-only
+    /// exposure of `Ledger::faults` — no new DB-layer plumbing.
+    pub async fn faults(
+        &self,
+        ctx: &async_graphql::Context<'_>,
+    ) -> FieldResult<Vec<FaultDto>> {
+        let db = ctx.data::<super::DBContext>()?.0.read().await;
+        let faults = db
+            .view(|t| t.faults(&self.faults_ids))
+            .map_err(|e| FieldError::new(e.to_string()))?;
+        Ok(faults.iter().map(FaultDto::from).collect())
     }
 
     pub async fn fees(
@@ -344,4 +360,35 @@ pub struct CallData {
     contract_id: String,
     fn_name: String,
     data: String,
+}
+
+/// On-chain equivocation-fault proof. `Fault` has no JSON/serde shape of its
+/// own (only a hand-rolled binary `Serializable` impl) — this is a
+/// hand-written GraphQL-layer projection.
+#[derive(SimpleObject)]
+pub struct FaultDto {
+    /// Hex-encoded `Fault::id()` digest — stable dedup key.
+    id: String,
+    fault_type: String,
+    /// Base58 BLS pubkey of the offending provisioner.
+    culprit: String,
+    round: u64,
+    iteration: u8,
+}
+
+impl From<&Fault> for FaultDto {
+    fn from(f: &Fault) -> Self {
+        let fault_type = match f {
+            Fault::DoubleCandidate(..) => "DoubleCandidate",
+            Fault::DoubleValidationVote(..) => "DoubleValidationVote",
+            Fault::DoubleRatificationVote(..) => "DoubleRatificationVote",
+        };
+        Self {
+            id: hex::encode(f.id()),
+            fault_type: fault_type.into(),
+            culprit: f.culprit().to_base58(),
+            round: f.round(),
+            iteration: f.iteration(),
+        }
+    }
 }
