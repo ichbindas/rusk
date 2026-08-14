@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Add `Fault::culprit()`, `Fault::round()`, `Fault::iteration()` public accessors — expose
+  the offending pubkey/round/iteration without reaching into `FaultData`'s private fields,
+  for consumers outside this crate (e.g. a GraphQL projection)
+
 ## [1.7.0] - 2026-06-10
 
 ### Added

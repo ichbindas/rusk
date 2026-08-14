@@ -85,6 +85,23 @@ impl From<BlsSigError> for InvalidFault {
 }
 
 impl Fault {
+    /// The BLS pubkey of the offending provisioner (the shared signer of
+    /// both inner `FaultData`s — `validate()` already enforces they match).
+    pub fn culprit(&self) -> PublicKey {
+        self.to_culprit()
+    }
+
+    /// Round of the offense (both inner `FaultData`s share round/iteration
+    /// per `validate()`'s own invariant check — either half works).
+    pub fn round(&self) -> u64 {
+        self.consensus_header().0.round
+    }
+
+    /// Iteration of the offense (see `round()`).
+    pub fn iteration(&self) -> u8 {
+        self.consensus_header().0.iteration
+    }
+
     // TODO: change to HEIGHT|TYPE|PROV_KEY once faults collection is
     // implemented
     pub fn id(&self) -> [u8; 32] {
