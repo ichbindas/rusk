@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Add `signer` field to the `network-trace`-gated `"msg received"` debug line in
+  `Listener::on_message` — the message is already fully decoded at that point, so this is a
+  zero-cost addition behind an existing feature flag
+- Add a periodic (60s) `network-trace`-gated k-bucket topology dump (`"topology snapshot"`
+  debug line per peer, one per bucket-distance/peer_addr pair) — `Kadcast::peer` is now
+  `Arc<Peer>` to allow a background task to hold a handle to it
+
 ## [1.7.0] - 2026-06-10
 
 ### Added

@@ -7,6 +7,8 @@
 use std::net::{AddrParseError, SocketAddr};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
+#[cfg(feature = "network-trace")]
+use std::time::Duration;
 
 use async_trait::async_trait;
 use kadcast::config::Config;
@@ -22,6 +24,10 @@ use crate::{BoxedFilter, Message};
 
 /// Number of alive peers randomly selected which a `flood_request` is sent to
 const REDUNDANCY_PEER_COUNT: usize = 8;
+
+/// Cadence of the `network-trace`-gated periodic k-bucket topology dump.
+#[cfg(feature = "network-trace")]
+const TOPOLOGY_DUMP_INTERVAL: Duration = Duration::from_secs(60);
 
 type RoutesList<const N: usize> = [Option<AsyncQueue<Message>>; N];
 type FilterList<const N: usize> = [Option<BoxedFilter>; N];
@@ -80,6 +86,7 @@ impl<const N: usize> kadcast::NetworkListen for Listener<N> {
                     topic = ?msg.topic(),
                     height = msg.get_height(),
                     iteration = msg.get_iteration(),
+                    signer = ?msg.get_signer(),
                 );
 
                 // Update Transport Data
@@ -108,7 +115,7 @@ impl<const N: usize> kadcast::NetworkListen for Listener<N> {
 }
 
 pub struct Kadcast<const N: usize> {
-    peer: Peer,
+    peer: Arc<Peer>,
     routes: Arc<RwLock<RoutesList<N>>>,
     filters: Arc<RwLock<FilterList<N>>>,
     conf: Config,
@@ -137,13 +144,35 @@ impl<const N: usize> Kadcast<N> {
         };
         conf.version = format!("{PROTOCOL_VERSION}");
         conf.version_match = format!("{PROTOCOL_VERSION}");
-        let peer = Peer::new(conf.clone(), listener)?;
+        let peer = Arc::new(Peer::new(conf.clone(), listener)?);
         let public_addr = conf
             .public_address
             .parse::<SocketAddr>()
             .expect("valid kadcast public address");
 
         let nonce = Nonce::from(public_addr.ip());
+
+        #[cfg(feature = "network-trace")]
+        {
+            let peer = peer.clone();
+            tokio::spawn(async move {
+                let mut tick = tokio::time::interval(TOPOLOGY_DUMP_INTERVAL);
+                loop {
+                    tick.tick().await;
+                    for (bucket_distance, nodes) in peer.to_route_table().await
+                    {
+                        for (peer_addr, _seen_at) in nodes {
+                            debug!(
+                                event = "topology snapshot",
+                                peer_addr = %peer_addr,
+                                peer_id = %peer_addr,
+                                bucket_distance,
+                            );
+                        }
+                    }
+                }
+            });
+        }
 
         Ok(Kadcast {
             routes,
